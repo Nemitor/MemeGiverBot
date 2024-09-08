@@ -4,13 +4,15 @@ import sys
 import logging
 import asyncio
 import time
+from token import AWAIT
 
 import pytonconnect.exceptions
+from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from pytoniq_core import Address
 from pytonconnect import TonConnect
 
 import config
-from ignore_transaction import add_id_to_ignore, check_id  
 from messages import get_comment_message
 from connector import get_connector
 
@@ -22,11 +24,19 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from io import BytesIO
 import qrcode
 from aiogram.types import BufferedInputFile
+from database import add_user_wallet, user_wallet_exists, init_db, get_next_id
+
+# Инициализация базы данных
+init_db()
 
 logger = logging.getLogger(__file__)
 
 dp = Dispatcher()
-bot = Bot(config.TOKEN, parse_mode=ParseMode.HTML)
+bot = Bot(
+    token=config.TOKEN,
+    session=AiohttpSession(),  # Необходимо передавать сессию, начиная с aiogram 3.7.0
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+)
 
 
 @dp.message(CommandStart())
@@ -51,36 +61,48 @@ async def command_start_handler(message: Message):
 
 @dp.message(Command('transaction'))
 async def send_transaction(message: Message):
-
     connector = get_connector(message.chat.id)
     connected = await connector.restore_connection()
     if not connected:
         await message.answer('Сначала подключите кошелек!')
         return
 
+    user_id = str(message.chat.id)
+
+    # Получить следующий уникальный идентификатор
+    transaction_id = get_next_id()
+
     transaction = {
         'valid_until': int(time.time() + 3600),
         'messages': [
-            get_comment_message(0)
+            get_comment_message(transaction_id)
         ]
     }
 
-    #Если найден ID то иди гуляй
-    if(check_id(str(message.chat.id))):
+    wallet_address = connector.account.address
+    # Проверка на наличие ID пользователя или адреса кошелька в базе данных
+    if user_wallet_exists(user_id=user_id , wallet_address=wallet_address):
         await message.answer('Лимит ваших наград исчерпан :(')
         return
 
+    await message.answer(text=f'Вы получаете награду с ключом: {transaction_id}')
     await message.answer(text='Подтвердите сообщение в своем кошельке!')
     try:
         await asyncio.wait_for(connector.send_transaction(transaction=transaction), 300)
-        await message.answer(text='Поздравляем! Вы получили свою награду!\nЛимит ваших наград исчерпан')
-        await add_id_to_ignore(str(message.chat.id))
+
+        # Запись в базу данных
+        if add_user_wallet(user_id, wallet_address):
+            await message.answer(text='Поздравляем! Вы получили свою награду!\nЛимит ваших наград исчерпан')
+        else:
+            await message.answer('Ошибка: пользователь или кошелек уже существует в базе данных.')
+
     except asyncio.TimeoutError:
         await message.answer(text='Кошелек не был подключен')
     except pytonconnect.exceptions.UserRejectsError:
         await message.answer(text='Вы отменили транзакцию!')
     except Exception as e:
         await message.answer(text=f'Ошибка: {e}')
+
 
 
 async def connect_wallet(message: Message, wallet_name: str):
@@ -94,7 +116,7 @@ async def connect_wallet(message: Message, wallet_name: str):
             wallet = w
 
     if wallet is None:
-        raise Exception(f'Неизветсный кошелек: {wallet_name}')
+        raise Exception(f'Неизвестный кошелек: {wallet_name}')
 
     generated_url = await connector.connect(wallet)
 
