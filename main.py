@@ -38,7 +38,6 @@ bot = Bot(
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
 
-
 @dp.message(CommandStart())
 async def command_start_handler(message: Message):
     chat_id = message.chat.id
@@ -58,24 +57,27 @@ async def command_start_handler(message: Message):
         mk_b.adjust(1, )
         await message.answer(text='Выберете предпочитаемый кошелек', reply_markup=mk_b.as_markup())
 
-
+keys = 0
 @dp.message(Command('transaction'))
 async def send_transaction(message: Message):
     connector = get_connector(message.chat.id)
     connected = await connector.restore_connection()
+    global keys
     if not connected:
         await message.answer('Сначала подключите кошелек!')
         return
 
     user_id = str(message.chat.id)
 
-    # Получить следующий уникальный идентификатор
-    transaction_id = get_next_id()
+    if keys < get_next_id():
+        keys = get_next_id()
+    else:
+        keys+=1
 
     transaction = {
         'valid_until': int(time.time() + 3600),
         'messages': [
-            get_comment_message(transaction_id)
+            get_comment_message(keys)
         ]
     }
 
@@ -85,7 +87,7 @@ async def send_transaction(message: Message):
         await message.answer('Лимит ваших наград исчерпан :(')
         return
 
-    await message.answer(text=f'Вы получаете награду с ключом: {transaction_id}')
+    await message.answer(text=f'Вы получаете награду с ключом: {keys}')
     await message.answer(text='Подтвердите сообщение в своем кошельке!')
     try:
         await asyncio.wait_for(connector.send_transaction(transaction=transaction), 300)
