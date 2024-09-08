@@ -102,6 +102,7 @@ async def send_transaction(message: Message):
         await message.answer(text='Кошелек не был подключен')
     except pytonconnect.exceptions.UserRejectsError:
         await message.answer(text='Вы отменили транзакцию!')
+        keys =-1
     except Exception as e:
         await message.answer(text=f'Ошибка: {e}')
 
