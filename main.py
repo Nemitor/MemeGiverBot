@@ -61,9 +61,10 @@ async def send_transaction(message: Message):
     transaction = {
         'valid_until': int(time.time() + 3600),
         'messages': [
-            get_comment_message()
+            get_comment_message(0)
         ]
     }
+
     #Если найден ID то иди гуляй
     if(check_id(str(message.chat.id))):
         await message.answer('Лимит ваших наград исчерпан :(')
@@ -106,7 +107,7 @@ async def connect_wallet(message: Message, wallet_name: str):
     file = BufferedInputFile(file=stream.getvalue(), filename='qrcode')
 
     await message.answer_photo(photo=file, caption='Подключите кошелек в течении 3 минут', reply_markup=mk_b.as_markup())
-    
+
 
     mk_b = InlineKeyboardBuilder()
     mk_b.button(text='Start', callback_data='start')
