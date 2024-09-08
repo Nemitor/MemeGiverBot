@@ -26,8 +26,9 @@ import qrcode
 from aiogram.types import BufferedInputFile
 from database import add_user_wallet, user_wallet_exists, init_db, get_next_id
 
-# Инициализация базы данных
+# Инициализация базы данных и ключей
 init_db()
+key_data = get_next_id()
 
 logger = logging.getLogger(__file__)
 
@@ -57,27 +58,27 @@ async def command_start_handler(message: Message):
         mk_b.adjust(1, )
         await message.answer(text='Выберете предпочитаемый кошелек', reply_markup=mk_b.as_markup())
 
-keys = 0
+user_try_claim_key = {}
 @dp.message(Command('transaction'))
 async def send_transaction(message: Message):
     connector = get_connector(message.chat.id)
     connected = await connector.restore_connection()
-    global keys
+    global key_data, user_try_claim_key
     if not connected:
         await message.answer('Сначала подключите кошелек!')
         return
 
     user_id = str(message.chat.id)
 
-    if keys < get_next_id():
-        keys = get_next_id()
-    else:
-        keys+=1
+    if user_id not in user_try_claim_key:
+        user_try_claim_key[user_id] = key_data
+        key_data += 1
+
 
     transaction = {
         'valid_until': int(time.time() + 3600),
         'messages': [
-            get_comment_message(keys)
+            get_comment_message(user_try_claim_key[user_id])
         ]
     }
 
@@ -87,7 +88,7 @@ async def send_transaction(message: Message):
         await message.answer('Лимит ваших наград исчерпан :(')
         return
 
-    await message.answer(text=f'Вы получаете награду с ключом: {keys}')
+    await message.answer(text=f'Вы получаете награду с ключом: {user_try_claim_key[user_id]}')
     await message.answer(text='Подтвердите сообщение в своем кошельке!')
     try:
         await asyncio.wait_for(connector.send_transaction(transaction=transaction), 300)
@@ -102,7 +103,6 @@ async def send_transaction(message: Message):
         await message.answer(text='Кошелек не был подключен')
     except pytonconnect.exceptions.UserRejectsError:
         await message.answer(text='Вы отменили транзакцию!')
-        keys =-1
     except Exception as e:
         await message.answer(text=f'Ошибка: {e}')
 
